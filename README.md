@@ -179,4 +179,16 @@ The mini-audit feature aims to filter out many scams but is not 100% accurate. S
 
 ## Donations  
 
-If you’ve found this bot useful and have profited from it, please consider donating any token to my BSC wallet address: `0x38cc265Ba9Af0deA866277f80eC4e719b6F452B4`.
+If you’ve found this bot useful and have profited from it please consider donating any token to my BSC wallet address: 0x38cc265Ba9Af0deA866277f80eC4e719b6F452B4
+
+
+
+
+
+
+
+
+
+
+
+
