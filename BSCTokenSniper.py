@@ -1,20 +1,24 @@
 print("Loading...")
 
+import time
 from web3 import Web3
-import datetime 
+import datetime
+import requests
 import threading
 import json
 import asyncio
-import requests
-import time
 import os
 import sys
 import ctypes
+from utils import get_price, send_telegram_message, to_scientific_notation
+from abis import pancake_abi, listening_abi, token_name_abi
 
+# Configuration de la console
 os.system("mode con: lines=32766")
-os.system("") #allows different colour text to be used
+os.system("")  # Permet l'utilisation de couleurs dans la console
 
-class style(): # Class of different text colours - default is white
+# Définition des styles de couleur
+class style:
     BLACK = '\033[30m'
     RED = '\033[31m'
     GREEN = '\033[32m'
@@ -26,278 +30,219 @@ class style(): # Class of different text colours - default is white
     UNDERLINE = '\033[4m'
     RESET = '\033[0m'
 
-print(style.MAGENTA) #change following text to magenta
-
+# Affichage du logo
+print(style.MAGENTA)
 print(" ██████╗ ███████╗ ██████╗    ████████╗ ██████╗ ██╗  ██╗███████╗███╗   ██╗    ███████╗███╗   ██╗██╗██████╗ ███████╗██████╗ ")
 print(" ██╔══██╗██╔════╝██╔════╝    ╚══██╔══╝██╔═══██╗██║ ██╔╝██╔════╝████╗  ██║    ██╔════╝████╗  ██║██║██╔══██╗██╔════╝██╔══██╗")
 print(" ██████╔╝███████╗██║            ██║   ██║   ██║█████╔╝ █████╗  ██╔██╗ ██║    ███████╗██╔██╗ ██║██║██████╔╝█████╗  ██████╔╝")
 print(" ██╔══██╗╚════██║██║            ██║   ██║   ██║██╔═██╗ ██╔══╝  ██║╚██╗██║    ╚════██║██║╚██╗██║██║██╔═══╝ ██╔══╝  ██╔══██╗")
 print(" ██████╔╝███████║╚██████╗       ██║   ╚██████╔╝██║  ██╗███████╗██║ ╚████║    ███████║██║ ╚████║██║██║     ███████╗██║  ██║")
 print(" ╚═════╝ ╚══════╝ ╚═════╝       ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝    ╚══════╝╚═╝  ╚═══╝╚═╝╚═╝     ╚══════╝╚═╝  ╚═╝")
-
 print(style.WHITE)
 
+# Initialisation du titre de la console
 ctypes.windll.kernel32.SetConsoleTitleW("BSCTokenSniper | Loading...")
 
+# Variables globales
 currentTimeStamp = ""
+numTokensDetected = 0
+numTokensBought = 0
+walletBalance = 0
+
+# Fonction pour obtenir le timestamp
 def getTimestamp():
     while True:
         timeStampData = datetime.datetime.now()
         global currentTimeStamp
         currentTimeStamp = "[" + timeStampData.strftime("%H:%M:%S.%f")[:-3] + "]"
-    
-    
 
-#-------------------------------- INITIALISE ------------------------------------------
+# Charger la configuration
+config_file_path = os.path.abspath('') + '/config.json'
+with open(config_file_path, 'r') as config_file:
+    config = json.load(config_file)
 
+# Variables de configuration
+bsc = "https://bsc-dataseed.binance.org/"
+web3 = Web3(Web3.HTTPProvider(bsc))
+pancakeSwapRouterAddress = config['pancakeSwapRouterAddress']
+pancakeSwapFactoryAddress = config['pancakeSwapFactoryAddress']
+wBNBAddress = config['wBNBAddress']
+walletAddress = config['walletAddress']
+private_key = config['walletPrivateKey']
+snipeBNBAmount = float(config['amountToSpendPerSnipe'])
+transactionRevertTime = int(config['transactionRevertTimeSeconds'])
+gasAmount = int(config['gasAmount'])
+gasPrice = int(config['gasPrice'])
+bscScanAPIKey = config['bscScanAPIKey']
+observeOnly = config['observeOnly'].lower() == "true"
+checkSourceCode = config['checkSourceCode'].lower() == "true"
+checkValidPancakeV2 = config['checkValidPancakeV2'].lower() == "true"
+checkMintFunction = config['checkMintFunction'].lower() == "true"
+checkHoneypot = config['checkHoneypot'].lower() == "true"
+checkPancakeV1Router = config['checkPancakeV1Router'].lower() == "true"
+enableMiniAudit = checkSourceCode and (checkValidPancakeV2 or checkMintFunction or checkHoneypot or checkPancakeV1Router)
+
+# Vérification de la connexion Web3
+if web3.is_connected():
+    print(currentTimeStamp + " [Info] Web3 successfully connected")
+    latest_block = web3.eth.block_number
+    print(currentTimeStamp + f" [Info] Latest block number: {latest_block}")
+else:
+    print(currentTimeStamp + " [Error] Failed to connect to Web3")
+    sys.exit(1)
+
+# Mise à jour du titre de la console
+def updateTitle():
+    global walletBalance
+    walletBalance = web3.from_wei(web3.eth.get_balance(walletAddress), 'ether')
+    walletBalance = round(walletBalance, -(int("{:e}".format(walletBalance).split('e')[1]) - 4))
+    ctypes.windll.kernel32.SetConsoleTitleW(
+        f"BSCTokenSniper | Tokens Detected: {numTokensDetected} | Tokens Bought: {numTokensBought} | Wallet Balance: {walletBalance} BNB"
+    )
+
+# Initialisation du timestamp
 timeStampThread = threading.Thread(target=getTimestamp)
 timeStampThread.start()
 
-
-numTokensDetected = 0
-numTokensBought = 0
-walletBalance = 0
-
-bsc = "https://bsc-dataseed.binance.org/"
-web3 = Web3(Web3.HTTPProvider(bsc))
-
-if web3.isConnected():
-    print(currentTimeStamp + " [Info] Web3 successfully connected")
-    
-#load json data
-
-configFilePath = os.path.abspath('') + '\config.json'
-
-with open(configFilePath, 'r') as configdata:
-    data=configdata.read()
-
-# parse file
-obj = json.loads(data)
-
-pancakeSwapRouterAddress = obj['pancakeSwapRouterAddress'] #load config data from JSON file into program
-pancakeSwapFactoryAddress = '0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73' #read from JSON later
-walletAddress = obj['walletAddress']
-private_key = obj['walletPrivateKey'] #private key is kept safe and only used in the program
-
-snipeBNBAmount = float(obj['amountToSpendPerSnipe'])
-transactionRevertTime = int(obj['transactionRevertTimeSeconds']) #number of seconds after transaction processes to cancel it if it hasn't completed
-gasAmount = int(obj['gasAmount'])
-gasPrice = int(obj['gasPrice'])
-bscScanAPIKey = obj['bscScanAPIKey']
-observeOnly = obj['observeOnly']
-
-checkSourceCode = obj['checkSourceCode']
-checkValidPancakeV2 = obj['checkValidPancakeV2']
-checkMintFunction = obj['checkMintFunction']
-checkHoneypot = obj['checkHoneypot']
-checkPancakeV1Router = obj['checkPancakeV1Router']
-
-enableMiniAudit = False
-
-if checkSourceCode == "True" and (checkValidPancakeV2 == "True" or checkMintFunction == "True" or checkHoneypot == "True" or checkPancakeV1Router == "True"):
-    enableMiniAudit = True
-
-def updateTitle():
-    walletBalance = web3.fromWei(web3.eth.get_balance(walletAddress),'ether') #There are references to ether in the code but it's set to BNB, its just how Web3 was originally designed
-    walletBalance = round(walletBalance, -(int("{:e}".format(walletBalance).split('e')[1]) - 4)) #the number '4' is the wallet balance significant figures + 1, so shows 5 sig figs
-    ctypes.windll.kernel32.SetConsoleTitleW("BSCTokenSniper | Tokens Detected: " + str(numTokensDetected) + " | Tokens Bought: " + str(numTokensBought) + " | Wallet Balance: " + str(walletBalance) + " BNB")
-
 updateTitle()
-
-
 print(currentTimeStamp + " [Info] Using Wallet Address: " + walletAddress)
-print(currentTimeStamp + " [Info] Using Snipe Amount: " + str(snipeBNBAmount), "BNB")
+print(currentTimeStamp + " [Info] Using Snipe Amount: " + str(snipeBNBAmount) + " BNB")
 
-pancakeABI = '[{"inputs":[{"internalType":"address","name":"_factory","type":"address"},{"internalType":"address","name":"_WETH","type":"address"}],"stateMutability":"nonpayable","type":"constructor"},{"inputs":[],"name":"WETH","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"address","name":"tokenA","type":"address"},{"internalType":"address","name":"tokenB","type":"address"},{"internalType":"uint256","name":"amountADesired","type":"uint256"},{"internalType":"uint256","name":"amountBDesired","type":"uint256"},{"internalType":"uint256","name":"amountAMin","type":"uint256"},{"internalType":"uint256","name":"amountBMin","type":"uint256"},{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"deadline","type":"uint256"}],"name":"addLiquidity","outputs":[{"internalType":"uint256","name":"amountA","type":"uint256"},{"internalType":"uint256","name":"amountB","type":"uint256"},{"internalType":"uint256","name":"liquidity","type":"uint256"}],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"token","type":"address"},{"internalType":"uint256","name":"amountTokenDesired","type":"uint256"},{"internalType":"uint256","name":"amountTokenMin","type":"uint256"},{"internalType":"uint256","name":"amountETHMin","type":"uint256"},{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"deadline","type":"uint256"}],"name":"addLiquidityETH","outputs":[{"internalType":"uint256","name":"amountToken","type":"uint256"},{"internalType":"uint256","name":"amountETH","type":"uint256"},{"internalType":"uint256","name":"liquidity","type":"uint256"}],"stateMutability":"payable","type":"function"},{"inputs":[],"name":"factory","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"amountOut","type":"uint256"},{"internalType":"uint256","name":"reserveIn","type":"uint256"},{"internalType":"uint256","name":"reserveOut","type":"uint256"}],"name":"getAmountIn","outputs":[{"internalType":"uint256","name":"amountIn","type":"uint256"}],"stateMutability":"pure","type":"function"},{"inputs":[{"internalType":"uint256","name":"amountIn","type":"uint256"},{"internalType":"uint256","name":"reserveIn","type":"uint256"},{"internalType":"uint256","name":"reserveOut","type":"uint256"}],"name":"getAmountOut","outputs":[{"internalType":"uint256","name":"amountOut","type":"uint256"}],"stateMutability":"pure","type":"function"},{"inputs":[{"internalType":"uint256","name":"amountOut","type":"uint256"},{"internalType":"address[]","name":"path","type":"address[]"}],"name":"getAmountsIn","outputs":[{"internalType":"uint256[]","name":"amounts","type":"uint256[]"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"amountIn","type":"uint256"},{"internalType":"address[]","name":"path","type":"address[]"}],"name":"getAmountsOut","outputs":[{"internalType":"uint256[]","name":"amounts","type":"uint256[]"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"uint256","name":"amountA","type":"uint256"},{"internalType":"uint256","name":"reserveA","type":"uint256"},{"internalType":"uint256","name":"reserveB","type":"uint256"}],"name":"quote","outputs":[{"internalType":"uint256","name":"amountB","type":"uint256"}],"stateMutability":"pure","type":"function"},{"inputs":[{"internalType":"address","name":"tokenA","type":"address"},{"internalType":"address","name":"tokenB","type":"address"},{"internalType":"uint256","name":"liquidity","type":"uint256"},{"internalType":"uint256","name":"amountAMin","type":"uint256"},{"internalType":"uint256","name":"amountBMin","type":"uint256"},{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"deadline","type":"uint256"}],"name":"removeLiquidity","outputs":[{"internalType":"uint256","name":"amountA","type":"uint256"},{"internalType":"uint256","name":"amountB","type":"uint256"}],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"token","type":"address"},{"internalType":"uint256","name":"liquidity","type":"uint256"},{"internalType":"uint256","name":"amountTokenMin","type":"uint256"},{"internalType":"uint256","name":"amountETHMin","type":"uint256"},{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"deadline","type":"uint256"}],"name":"removeLiquidityETH","outputs":[{"internalType":"uint256","name":"amountToken","type":"uint256"},{"internalType":"uint256","name":"amountETH","type":"uint256"}],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"token","type":"address"},{"internalType":"uint256","name":"liquidity","type":"uint256"},{"internalType":"uint256","name":"amountTokenMin","type":"uint256"},{"internalType":"uint256","name":"amountETHMin","type":"uint256"},{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"deadline","type":"uint256"}],"name":"removeLiquidityETHSupportingFeeOnTransferTokens","outputs":[{"internalType":"uint256","name":"amountETH","type":"uint256"}],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"token","type":"address"},{"internalType":"uint256","name":"liquidity","type":"uint256"},{"internalType":"uint256","name":"amountTokenMin","type":"uint256"},{"internalType":"uint256","name":"amountETHMin","type":"uint256"},{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"deadline","type":"uint256"},{"internalType":"bool","name":"approveMax","type":"bool"},{"internalType":"uint8","name":"v","type":"uint8"},{"internalType":"bytes32","name":"r","type":"bytes32"},{"internalType":"bytes32","name":"s","type":"bytes32"}],"name":"removeLiquidityETHWithPermit","outputs":[{"internalType":"uint256","name":"amountToken","type":"uint256"},{"internalType":"uint256","name":"amountETH","type":"uint256"}],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"token","type":"address"},{"internalType":"uint256","name":"liquidity","type":"uint256"},{"internalType":"uint256","name":"amountTokenMin","type":"uint256"},{"internalType":"uint256","name":"amountETHMin","type":"uint256"},{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"deadline","type":"uint256"},{"internalType":"bool","name":"approveMax","type":"bool"},{"internalType":"uint8","name":"v","type":"uint8"},{"internalType":"bytes32","name":"r","type":"bytes32"},{"internalType":"bytes32","name":"s","type":"bytes32"}],"name":"removeLiquidityETHWithPermitSupportingFeeOnTransferTokens","outputs":[{"internalType":"uint256","name":"amountETH","type":"uint256"}],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"tokenA","type":"address"},{"internalType":"address","name":"tokenB","type":"address"},{"internalType":"uint256","name":"liquidity","type":"uint256"},{"internalType":"uint256","name":"amountAMin","type":"uint256"},{"internalType":"uint256","name":"amountBMin","type":"uint256"},{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"deadline","type":"uint256"},{"internalType":"bool","name":"approveMax","type":"bool"},{"internalType":"uint8","name":"v","type":"uint8"},{"internalType":"bytes32","name":"r","type":"bytes32"},{"internalType":"bytes32","name":"s","type":"bytes32"}],"name":"removeLiquidityWithPermit","outputs":[{"internalType":"uint256","name":"amountA","type":"uint256"},{"internalType":"uint256","name":"amountB","type":"uint256"}],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"amountOut","type":"uint256"},{"internalType":"address[]","name":"path","type":"address[]"},{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"deadline","type":"uint256"}],"name":"swapETHForExactTokens","outputs":[{"internalType":"uint256[]","name":"amounts","type":"uint256[]"}],"stateMutability":"payable","type":"function"},{"inputs":[{"internalType":"uint256","name":"amountOutMin","type":"uint256"},{"internalType":"address[]","name":"path","type":"address[]"},{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"deadline","type":"uint256"}],"name":"swapExactETHForTokens","outputs":[{"internalType":"uint256[]","name":"amounts","type":"uint256[]"}],"stateMutability":"payable","type":"function"},{"inputs":[{"internalType":"uint256","name":"amountOutMin","type":"uint256"},{"internalType":"address[]","name":"path","type":"address[]"},{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"deadline","type":"uint256"}],"name":"swapExactETHForTokensSupportingFeeOnTransferTokens","outputs":[],"stateMutability":"payable","type":"function"},{"inputs":[{"internalType":"uint256","name":"amountIn","type":"uint256"},{"internalType":"uint256","name":"amountOutMin","type":"uint256"},{"internalType":"address[]","name":"path","type":"address[]"},{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"deadline","type":"uint256"}],"name":"swapExactTokensForETH","outputs":[{"internalType":"uint256[]","name":"amounts","type":"uint256[]"}],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"amountIn","type":"uint256"},{"internalType":"uint256","name":"amountOutMin","type":"uint256"},{"internalType":"address[]","name":"path","type":"address[]"},{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"deadline","type":"uint256"}],"name":"swapExactTokensForETHSupportingFeeOnTransferTokens","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"amountIn","type":"uint256"},{"internalType":"uint256","name":"amountOutMin","type":"uint256"},{"internalType":"address[]","name":"path","type":"address[]"},{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"deadline","type":"uint256"}],"name":"swapExactTokensForTokens","outputs":[{"internalType":"uint256[]","name":"amounts","type":"uint256[]"}],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"amountIn","type":"uint256"},{"internalType":"uint256","name":"amountOutMin","type":"uint256"},{"internalType":"address[]","name":"path","type":"address[]"},{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"deadline","type":"uint256"}],"name":"swapExactTokensForTokensSupportingFeeOnTransferTokens","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"amountOut","type":"uint256"},{"internalType":"uint256","name":"amountInMax","type":"uint256"},{"internalType":"address[]","name":"path","type":"address[]"},{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"deadline","type":"uint256"}],"name":"swapTokensForExactETH","outputs":[{"internalType":"uint256[]","name":"amounts","type":"uint256[]"}],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"uint256","name":"amountOut","type":"uint256"},{"internalType":"uint256","name":"amountInMax","type":"uint256"},{"internalType":"address[]","name":"path","type":"address[]"},{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"deadline","type":"uint256"}],"name":"swapTokensForExactTokens","outputs":[{"internalType":"uint256[]","name":"amounts","type":"uint256[]"}],"stateMutability":"nonpayable","type":"function"},{"stateMutability":"payable","type":"receive"}]'
-listeningABI = json.loads('[{"inputs":[{"internalType":"address","name":"_feeToSetter","type":"address"}],"payable":false,"stateMutability":"nonpayable","type":"constructor"},{"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"token0","type":"address"},{"indexed":true,"internalType":"address","name":"token1","type":"address"},{"indexed":false,"internalType":"address","name":"pair","type":"address"},{"indexed":false,"internalType":"uint256","name":"","type":"uint256"}],"name":"PairCreated","type":"event"},{"constant":true,"inputs":[{"internalType":"uint256","name":"","type":"uint256"}],"name":"allPairs","outputs":[{"internalType":"address","name":"","type":"address"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[],"name":"allPairsLength","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"internalType":"address","name":"tokenA","type":"address"},{"internalType":"address","name":"tokenB","type":"address"}],"name":"createPair","outputs":[{"internalType":"address","name":"pair","type":"address"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[],"name":"feeTo","outputs":[{"internalType":"address","name":"","type":"address"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[],"name":"feeToSetter","outputs":[{"internalType":"address","name":"","type":"address"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[{"internalType":"address","name":"","type":"address"},{"internalType":"address","name":"","type":"address"}],"name":"getPair","outputs":[{"internalType":"address","name":"","type":"address"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"internalType":"address","name":"_feeTo","type":"address"}],"name":"setFeeTo","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":false,"inputs":[{"internalType":"address","name":"_feeToSetter","type":"address"}],"name":"setFeeToSetter","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"}]')
-tokenNameABI = json.loads('[ { "anonymous": false, "inputs": [ { "indexed": true, "internalType": "address", "name": "owner", "type": "address" }, { "indexed": true, "internalType": "address", "name": "spender", "type": "address" }, { "indexed": false, "internalType": "uint256", "name": "value", "type": "uint256" } ], "name": "Approval", "type": "event" }, { "anonymous": false, "inputs": [ { "indexed": true, "internalType": "address", "name": "from", "type": "address" }, { "indexed": true, "internalType": "address", "name": "to", "type": "address" }, { "indexed": false, "internalType": "uint256", "name": "value", "type": "uint256" } ], "name": "Transfer", "type": "event" }, { "constant": true, "inputs": [ { "internalType": "address", "name": "_owner", "type": "address" }, { "internalType": "address", "name": "spender", "type": "address" } ], "name": "allowance", "outputs": [ { "internalType": "uint256", "name": "", "type": "uint256" } ], "payable": false, "stateMutability": "view", "type": "function" }, { "constant": false, "inputs": [ { "internalType": "address", "name": "spender", "type": "address" }, { "internalType": "uint256", "name": "amount", "type": "uint256" } ], "name": "approve", "outputs": [ { "internalType": "bool", "name": "", "type": "bool" } ], "payable": false, "stateMutability": "nonpayable", "type": "function" }, { "constant": true, "inputs": [ { "internalType": "address", "name": "account", "type": "address" } ], "name": "balanceOf", "outputs": [ { "internalType": "uint256", "name": "", "type": "uint256" } ], "payable": false, "stateMutability": "view", "type": "function" }, { "constant": true, "inputs": [], "name": "decimals", "outputs": [ { "internalType": "uint256", "name": "", "type": "uint256" } ], "payable": false, "stateMutability": "view", "type": "function" }, { "constant": true, "inputs": [], "name": "getOwner", "outputs": [ { "internalType": "address", "name": "", "type": "address" } ], "payable": false, "stateMutability": "view", "type": "function" }, { "constant": true, "inputs": [], "name": "name", "outputs": [ { "internalType": "string", "name": "", "type": "string" } ], "payable": false, "stateMutability": "view", "type": "function" }, { "constant": true, "inputs": [], "name": "symbol", "outputs": [ { "internalType": "string", "name": "", "type": "string" } ], "payable": false, "stateMutability": "view", "type": "function" }, { "constant": true, "inputs": [], "name": "totalSupply", "outputs": [ { "internalType": "uint256", "name": "", "type": "uint256" } ], "payable": false, "stateMutability": "view", "type": "function" }, { "constant": false, "inputs": [ { "internalType": "address", "name": "recipient", "type": "address" }, { "internalType": "uint256", "name": "amount", "type": "uint256" } ], "name": "transfer", "outputs": [ { "internalType": "bool", "name": "", "type": "bool" } ], "payable": false, "stateMutability": "nonpayable", "type": "function" }, { "constant": false, "inputs": [ { "internalType": "address", "name": "sender", "type": "address" }, { "internalType": "address", "name": "recipient", "type": "address" }, { "internalType": "uint256", "name": "amount", "type": "uint256" } ], "name": "transferFrom", "outputs": [ { "internalType": "bool", "name": "", "type": "bool" } ], "payable": false, "stateMutability": "nonpayable", "type": "function" } ]')
-
-
-
-
-#------------------------------------- BUY SPECIFIED TOKEN ON PANCAKESWAP ----------------------------------------------------------
-
-
-    
-
+# Fonction d'achat d'un token
 def Buy(tokenAddress, tokenSymbol):
-    if(tokenAddress != None):
-        tokenToBuy = web3.toChecksumAddress(tokenAddress)
-        spend = web3.toChecksumAddress("0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c")  #wbnb contract address
-        contract = web3.eth.contract(address=pancakeSwapRouterAddress, abi=pancakeABI)
-        nonce = web3.eth.get_transaction_count(walletAddress)
-        start = time.time()
-        pancakeswap2_txn = contract.functions.swapExactETHForTokens(
-        0, # Set to 0 or specify min number of tokens - setting to 0 just buys X amount of token at its current price for whatever BNB specified
-        [spend,tokenToBuy],
+    if tokenAddress is None:
+        return
+    tokenToBuy = web3.toChecksumAddress(tokenAddress)
+    spend = web3.toChecksumAddress(wBNBAddress)  # WBNB contract address
+    contract = web3.eth.contract(address=pancakeSwapRouterAddress, abi=pancake_abi)
+    nonce = web3.eth.get_transaction_count(walletAddress)
+    pancakeswap2_txn = contract.functions.swapExactETHForTokens(
+        0,
+        [spend, tokenToBuy],
         walletAddress,
         (int(time.time()) + transactionRevertTime)
-        ).buildTransaction({
+    ).buildTransaction({
         'from': walletAddress,
-        'value': web3.toWei(float(snipeBNBAmount), 'ether'), #This is the Token(BNB) amount you want to Swap from
+        'value': web3.to_wei(float(snipeBNBAmount), 'ether'),
         'gas': gasAmount,
-        'gasPrice': web3.toWei(gasPrice,'gwei'),
+        'gasPrice': web3.to_wei(gasPrice, 'gwei'),
         'nonce': nonce,
-        })
+    })
 
-        try:
-            signed_txn = web3.eth.account.sign_transaction(pancakeswap2_txn, private_key)
-            tx_token = web3.eth.send_raw_transaction(signed_txn.rawTransaction) #BUY THE TOKEN
-        except:
-            print(style.RED + currentTimeStamp + " Transaction failed.")
-            print("") # line break: move onto scanning for next token
-    
-        txHash = str(web3.toHex(tx_token))
-
-
-        #TOKEN IS BOUGHT
-
-        checkTransactionSuccessURL = "https://api.bscscan.com/api?module=transaction&action=gettxreceiptstatus&txhash=" + txHash + "&apikey=" + bscScanAPIKey
-        checkTransactionRequest = requests.get(url = checkTransactionSuccessURL)
+    try:
+        signed_txn = web3.eth.account.sign_transaction(pancakeswap2_txn, private_key)
+        tx_token = web3.eth.send_raw_transaction(signed_txn.rawTransaction)
+        txHash = str(web3.to_hex(tx_token))
+        checkTransactionSuccessURL = f"https://api.bscscan.com/api?module=transaction&action=gettxreceiptstatus&txhash={txHash}&apikey={bscScanAPIKey}"
+        checkTransactionRequest = requests.get(url=checkTransactionSuccessURL)
         txResult = checkTransactionRequest.json()['status']
 
-
-        if(txResult == "1"):
-            print(style.GREEN + currentTimeStamp + " Successfully bought $" + tokenSymbol + " for " + style.BLUE + str(snipeBNBAmount) + style.GREEN + " BNB - TX ID: ", txHash)
-
+        if txResult == "1":
+            print(style.GREEN + currentTimeStamp + f" Successfully bought ${tokenSymbol} for {style.BLUE}{snipeBNBAmount}{style.GREEN} BNB - TX ID: {txHash}")
         else:
             print(style.RED + currentTimeStamp + " Transaction failed: likely not enough gas.")
+    except Exception as e:
+        print(style.RED + currentTimeStamp + f" Transaction failed: {str(e)}")
+    updateTitle()
 
-        updateTitle()
-
-    
-buyTokenThread = threading.Thread(target=Buy(None, None))
-buyTokenThread.start()
-
-
-
-
-#------------------------------------- LISTEN FOR TOKENS ON BINANCE SMART CHAIN THAT HAVE JUST ADDED LIQUIDITY ----------------------------------------------------------
-
-
-contract = web3.eth.contract(address=pancakeSwapFactoryAddress, abi=listeningABI)
-
-print(currentTimeStamp + " [Info] Scanning for new tokens...")
-print("") #line break
-
-
-
+# Fonction appelée lorsqu'un nouveau token est détecté
 def foundToken(event):
+    global numTokensDetected, numTokensBought
     try:
-        jsonEventContents = json.loads(Web3.toJSON(event))
-        if ((jsonEventContents['args']['token0'] == "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c") or (jsonEventContents['args']['token1'] == "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c")): 
-        #check if pair is WBNB, if not then ignore it
-        
-            if (jsonEventContents['args']['token0'] == "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"):
-               tokenAddress = jsonEventContents['args']['token1']
-            else:
-                tokenAddress = jsonEventContents['args']['token0']
-       
-            getTokenName = web3.eth.contract(address=tokenAddress, abi=tokenNameABI) #code to get name and symbol from token address
+        jsonEventContents = json.loads(web3.to_json(event))
+        if jsonEventContents['args']['token0'] == wBNBAddress:
+            tokenAddress = jsonEventContents['args']['token1']
+        elif jsonEventContents['args']['token1'] == wBNBAddress:
+            tokenAddress = jsonEventContents['args']['token0']
+        else:
+            return  # Ignorer si la paire ne contient pas WBNB
 
+        # Récupérer le nom et le symbole du token
+        try:
+            getTokenName = web3.eth.contract(address=tokenAddress, abi=token_name_abi)
             tokenName = getTokenName.functions.name().call()
             tokenSymbol = getTokenName.functions.symbol().call()
-            print(style.YELLOW + currentTimeStamp + " [Token] New potential token detected: " + style.CYAN + tokenName + " (" + tokenSymbol + "): " + style.MAGENTA + tokenAddress + style.RESET)
-            global numTokensDetected
-            global numTokensBought
-            numTokensDetected = numTokensDetected + 1 
-            updateTitle()
+        except Exception as e:
+            tokenName = "Unknown"
+            tokenSymbol = "Unknown"
+            print(style.RED + currentTimeStamp + f" [Error] Failed to get token name/symbol: {str(e)}")
 
+        # Afficher le message de détection
+        print(style.YELLOW + currentTimeStamp + " [Token] New potential token detected: " + style.CYAN + tokenName + " (" + tokenSymbol + "): " + style.MAGENTA + tokenAddress + style.RESET)
+        numTokensDetected += 1
+        updateTitle()
 
-         #--------------------------------------------MINI AUDIT FEATURE-------------------------------------------------------
-
-            if(enableMiniAudit == True): #enable mini audit feature: quickly scans token for potential features that make it a scam / honeypot / rugpull etc
-                print(style.YELLOW + "[Token] Starting Mini Audit...")
-                contractCodeGetRequestURL = "https://api.bscscan.com/api?module=contract&action=getsourcecode&address=" + tokenAddress + "&apikey=" + bscScanAPIKey
-                contractCodeRequest = requests.get(url = contractCodeGetRequestURL)
+        # Si le mini-audit est désactivé, envoyer directement une notification Telegram
+        if not enableMiniAudit:
+            price = get_price(tokenAddress)
+            send_telegram_message(tokenName, tokenAddress, price)
+            if not observeOnly:
+                numTokensBought += 1
+                Buy(tokenAddress, tokenSymbol)
+                updateTitle()
+        else:
+            # Mini-audit
+            print(style.YELLOW + "[Token] Starting Mini Audit...")
+            try:
+                contractCodeGetRequestURL = f"https://api.bscscan.com/api?module=contract&action=getsourcecode&address={tokenAddress}&apikey={bscScanAPIKey}"
+                contractCodeRequest = requests.get(url=contractCodeGetRequestURL)
                 tokenContractCode = contractCodeRequest.json()
 
-                if(str(tokenContractCode['result'][0]['ABI']) == "Contract source code not verified") and checkSourceCode == "True": #check if source code is verified
+                if str(tokenContractCode['result'][0]['ABI']) == "Contract source code not verified" and checkSourceCode:
                     print(style.RED + "[FAIL] Contract source code isn't verified.")
-
-                elif ("0x05fF2B0DB69458A0750badebc4f9e13aDd608C7F" in str(tokenContractCode['result'][0]['SourceCode'])) and checkPancakeV1Router == "True": #check if pancakeswap v1 router is used
+                elif "0x05fF2B0DB69458A0750badebc4f9e13aDd608C7F" in str(tokenContractCode['result'][0]['SourceCode']) and checkPancakeV1Router:
                     print(style.RED + "[FAIL] Contract uses PancakeSwap v1 router.")
-
-
-                elif (str(pancakeSwapRouterAddress) not in str(tokenContractCode['result'][0]['SourceCode'])) and checkValidPancakeV2 == "True": #check if pancakeswap v2 router is used
+                elif str(pancakeSwapRouterAddress) not in str(tokenContractCode['result'][0]['SourceCode']) and checkValidPancakeV2:
                     print(style.RED + "[FAIL] Contract doesn't use valid PancakeSwap v2 router.")
-
-                elif "mint" in str(tokenContractCode['result'][0]['SourceCode']) and checkMintFunction == "True": #check if any mint function enabled
+                elif "mint" in str(tokenContractCode['result'][0]['SourceCode']) and checkMintFunction:
                     print(style.RED + "[FAIL] Contract has mint function enabled.")
-
-
-                elif ("function transferFrom(address sender, address recipient, uint256 amount) public override returns (bool)" in str(tokenContractCode['result'][0]['SourceCode']) or "function _approve(address owner, address spender, uint256 amount) internal" in str(tokenContractCode['result'][0]['SourceCode']) or "newun" in str(tokenContractCode['result'][0]['SourceCode'])) and checkHoneypot == "True": #check if token is honeypot
+                elif ("function transferFrom(address sender, address recipient, uint256 amount) public override returns (bool)" in str(tokenContractCode['result'][0]['SourceCode']) or "function _approve(address owner, address spender, uint256 amount) internal" in str(tokenContractCode['result'][0]['SourceCode']) or "newun" in str(tokenContractCode['result'][0]['SourceCode'])) and checkHoneypot:
                     print(style.RED + "[FAIL] Contract is a honeypot.")
-
                 else:
-                    print(style.GREEN + "[SUCCESS] Token has passed mini audit.") #now you can buy
-                    numTokensBought = numTokensBought + 1
-                    if(observeOnly == "False"):
+                    print(style.GREEN + "[SUCCESS] Token has passed mini audit.")
+                    # Récupérer le prix et envoyer une notification Telegram
+                    price = get_price(tokenAddress)
+                    send_telegram_message(tokenName, tokenAddress, price)
+                    if not observeOnly:
+                        numTokensBought += 1
                         Buy(tokenAddress, tokenSymbol)
                         updateTitle()
-                    
-                    
+            except Exception as e:
+                print(style.RED + currentTimeStamp + f" [Error] Mini-audit failed: {str(e)}")
 
-              
+        print("")  # Saut de ligne
 
-            else: #we dont care about audit, just buy it
-                if(observeOnly == "False"):
-                    Buy(tokenAddress, tokenSymbol)
-                    numTokensBought += 1
-                    updateTitle()
-                    
-            print("") # line break: move onto scanning for next token
+    except Exception as e:
+        print(style.RED + currentTimeStamp + f" [Error] Error processing token event: {str(e)}")
 
-    except:
-        pass
-
-                
-
-      
-      #------------------------------------END OF MINI AUDIT FEATURE---------------------------------------------------------------
-        
-        
-        
-#-----------------------------------------TOKEN SCANNER BACKGROUND CODE----------------------------------------------------------------------
-        
+# Boucle d'écoute des événements
 async def tokenLoop(event_filter, poll_interval):
     while True:
         try:
             for PairCreated in event_filter.get_new_entries():
                 foundToken(PairCreated)
             await asyncio.sleep(poll_interval)
-        except:
-            pass
-            
-            
+        except Exception as e:
+            print(style.RED + currentTimeStamp + f" [Error] Error in token loop: {str(e)}")
+            break
 
-
+# Fonction principale pour écouter les tokens
 def listenForTokens():
-    event_filter = contract.events.PairCreated.createFilter(fromBlock='latest')
-    #block_filter = web3.eth.filter('latest')
-    # tx_filter = web3.eth.filter('pending')
-    loop = asyncio.get_event_loop()
+    contract = web3.eth.contract(address=pancakeSwapFactoryAddress, abi=listening_abi)
+    print(currentTimeStamp + " [Info] Scanning for new tokens...")
+    print("")
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    event_filter = contract.events.PairCreated.create_filter(from_block=web3.eth.block_number - 1000)
     try:
-        loop.run_until_complete(
-            asyncio.gather(
-                tokenLoop(event_filter, 0)))       
-                # log_loop(block_filter, 2),
-                # log_loop(tx_filter, 2)))
-                 
-    finally:
-        # close loop to free up system resources
-        #loop.close()
-        #print("loop close")
+        loop.run_until_complete(tokenLoop(event_filter, 1))
+    except Exception as e:
+        print(style.RED + currentTimeStamp + f" [Error] Event loop error: {str(e)}")
         listenForTokens()
+    finally:
+        loop.close()
 
-        #beware of valueerror code -32000 which is a glitch. make it ignore it and go bakc to listening
-
-
-
+# Lancer l'écoute des tokens
 listenForTokens()
 
 input("")
-#------------------------------------------END OF TOKEN SCANNER BACKGROUND CODE---------------------------------------------------------------------
-
-
-
