@@ -1,0 +1,52 @@
+# Fichiers Python générés
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Environnements virtuels Python
+venv/
+env/
+.virtualenv/
+*.venv/
+
+# Fichiers de configuration sensibles
+config.json
+
+# Fichiers temporaires et logs
+*.log
+*.tmp
+*.bak
+*.swp
+
+# Fichiers générés par les éditeurs/IDE
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# Dépendances locales (installées via npm ou pip)
+node_modules/
+*.lock
+
+# Fichiers système
+.DS_Store
+Thumbs.db
+
+# Fichiers de test ou de développement
+*.test
+*.coverage
+coverage/
+htmlcov/
+
+# Fichiers spécifiques au projet
+launchBSCTokenSniper.bat  # Si tu veux éviter de suivre ce fichier (optionnel)
+
+# Fichiers de données ou de cache locaux
+*.cache
+*.dat
+*.db
