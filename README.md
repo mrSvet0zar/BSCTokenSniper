@@ -62,7 +62,7 @@ The bot can send notifications to a Telegram chat whenever a new token is detect
    - Send a message in the chat (e.g., "Hello").
    - Open a browser and go to the following URL, replacing `<YOUR_BOT_TOKEN>` with your bot token: https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates  
    For example :  
-   https://api.telegram.org/bot7607613951:AAFeQb5BW16liTBM9DdyY6NchrrdLSHwhMM/getUpdates  
+   https://api.telegram.org/botT7836372:Aazzeerrttyy83849493994/getUpdates  
    - Look for the `chat` object in the JSON response. The `id` field is your chat ID (e.g., `572531500`). Copy this ID.
 
 3. **Add Telegram Details to `config.json`**:
@@ -71,7 +71,7 @@ The bot can send notifications to a Telegram chat whenever a new token is detect
 ```json
 "telegramBotToken": "Your bot token from BotFather"  
 "telegramChatId": "The chat ID where notifications will be sent"  
-"enableTelegramNotifications": "Set to True toenable notifications, or False to disable them"  
+"enableTelegramNotifications": "Set to True to enable notifications, or False to disable them"  
 ```  
 4. **Test the notifications:**  
 - Run the bot using `launchBSCTokenSniper.bat`.  
