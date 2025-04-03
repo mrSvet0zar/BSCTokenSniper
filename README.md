@@ -69,9 +69,6 @@ The bot can send notifications to a Telegram chat whenever a new token is detect
 - Open the `config.json` file in a text editor.
 - Add the following fields with the values you obtained:
 ```json
-"telegramBotToken": "7607613951:AAFeQb5BW16liTBM9DdyY6NchrrdLSHwhMM",
-"telegramChatId": "572531500",
-"enableTelegramNotifications": "True"  
 "telegramBotToken": "Your bot token from BotFather"  
 "telegramChatId": "The chat ID where notifications will be sent"  
 "enableTelegramNotifications": "Set to True toenable notifications, or False to disable them"  
